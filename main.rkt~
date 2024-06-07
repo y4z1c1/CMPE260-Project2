@@ -1,0 +1,115 @@
+;yusuf anil yazici
+;2021400207
+;compiling: yes
+;complete: yes
+#lang racket
+
+(provide (all-defined-out))
+
+
+(define (binary_to_decimal binary)
+  (let loop ((bits (string->list binary)) (result 0))
+    (if (null? bits)
+        result
+        (loop (cdr bits) (+ (* result 2) (if (char=? (car bits) #\1) 1 0))))))
+
+(define (relocator args limit base)
+  (map
+    (lambda (binary-address)
+      (let ((decimal-address (binary_to_decimal binary-address)))
+        (let ((physical-address (+ decimal-address base)))  
+          (if (> decimal-address limit)                    
+              -1                                            
+              physical-address))))                        
+    args))
+
+
+(define (divide_address_space num page_size)
+  (let* ((page_size_bits (+ 10 (inexact->exact (floor (/ (log page_size) (log 2))))))  
+         (page_number_bits (max 0 (- (string-length num) page_size_bits)))          
+         (page_number (substring num 0 page_number_bits))                           
+         (page_offset (substring num page_number_bits)))                           
+    (list page_number page_offset)))                                                
+                              
+
+                             
+
+(define (page args page_table page_size)
+  (let* ((page_size_bits (+ 10 (floor (/ (log page_size) (log 2))))))  ;
+    (map
+      (lambda (arg)
+        (let* ((split_addr (divide_address_space arg page_size))
+               (page_number (car split_addr))                         
+               (page_offset (cadr split_addr))                        
+               (page_number_decimal (string->number page_number 2))   
+               (frame_number (if (< page_number_decimal (length page_table))
+                                (list-ref page_table page_number_decimal)
+                                "ERROR")))                            
+          (if (string=? frame_number "ERROR")
+              frame_number
+              (string-append frame_number page_offset))))             
+      args)))
+
+
+
+(define (factorial n)
+  (if (<= n 1)
+      1
+      (* n (factorial (- n 1)))))
+
+(define (taylor-term x n)
+  (/ (expt x (+ (* 2 n) 1))
+     (factorial (+ (* 2 n) 1))))
+
+(define (find-sin x num)
+  (let* ((radians (/ (* x pi) 180))
+         (terms (map (lambda (n)
+                       (* (expt -1 n) (taylor-term radians n)))
+                     (range 0 num))))
+    (apply + terms)))
+
+
+
+(define (sum-first-ten-digits num)
+  (let* ((str (number->string num))
+         (decimal-part (second (regexp-split #px"\\." str)))
+         (digits (substring decimal-part 0 (min 10 (string-length decimal-part)))))
+    (apply + (map (lambda (c) (- (char->integer c) 48)) (string->list digits)))))
+
+(define (myhash arg table-size)
+  (let* ((decimal-value (binary_to_decimal arg))
+         (n (+ (modulo decimal-value 5) 1))
+         (sin-value (find-sin decimal-value n))
+         (sum-digits (sum-first-ten-digits sin-value)))
+    (modulo sum-digits table-size)))
+
+
+(define (hashed_page arg table-size page-table page-size)
+  (let* ((split-addr (divide_address_space arg page-size))
+         (page-number (car split-addr))
+         (page-offset (cadr split-addr))
+         (page-number-decimal (string->number page-number 2))
+         (hash-value (myhash page-number table-size))
+         (bucket (list-ref page-table hash-value)))
+    (let loop ((bucket bucket))
+      (if (null? bucket)
+          "ERROR"
+          (let ((entry (car bucket)))
+            (if (string=? (car entry) page-number)
+                (string-append (cadr entry) page-offset)
+                (loop (cdr bucket))))))))
+
+
+(define (split_addresses args size)
+  (let loop ((addresses (string->list args)) (result '()))
+    (if (null? addresses)
+        (reverse result)
+        (let ((chunk (take addresses size)))
+          (loop (drop addresses size) (cons (list->string chunk) result))))))
+
+
+(define (map_addresses args table-size page-table page-size address-space-size)
+  (let ((split-args (split_addresses args address-space-size)))
+    (map (lambda (arg)
+           (hashed_page arg table-size page-table page-size))
+         split-args)))
